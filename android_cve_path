@@ -1,0 +1,92 @@
+from time import sleep
+
+import requests
+import re
+import csv
+
+base_url = {
+    False: 'https://source.android.com/security/bulletin/',
+    True: 'https://source.android.google.cn/security/bulletin/'
+}
+useGoogleCN = True
+
+
+def get_result(ymd):
+    response = __send_request__(ymd)
+    if response.status_code == 200:
+        print("response.status_code:200")
+        result = response.text
+        comment_h2 = re.compile('<h2 id=.+?data-text="' + ymd + '.+?</h2>(.*?)<h2 id=.+?</h2>', re.DOTALL)
+        h2_list = comment_h2.findall(result)
+        comment_h3 = re.compile('<h3 id=".+?" data-text=".+?" tabindex="0">(.+?)</h3>', re.DOTALL)
+        h3_list = comment_h3.findall(h2_list[0])
+        comment_tbody = re.compile('<tbody>(.+?)</tbody>', re.DOTALL)
+        comment_tr = re.compile('<tr>(.+?)</tr>', re.DOTALL)
+        comment_td_row = re.compile('<td rowspan="[1-2]">(.+?)</td>', re.DOTALL)
+        comment_td = re.compile('<td>(.+?)</td>', re.DOTALL)
+        comment_a = re.compile('<a href="(.+?)".*</a>')
+        tbody_list = comment_tbody.findall(h2_list[0])
+        if "Google Play 系统更新" in h3_list:
+            h3_list.remove("Google Play 系统更新")
+        length = len(h3_list)
+        i = 0
+        with open('android_cve_2017-2020.csv', 'a+', newline='') as csvfile:
+            csv_writer = csv.writer(csvfile)
+            while i != length:
+                tr_list = comment_tr.findall(tbody_list[i])
+                for item in tr_list:
+                    td_list = comment_td_row.findall(item)
+                    result = [ymd, h3_list[i]]
+                    flag = True
+                    if len(td_list) == 0:
+                        td_list = comment_td.findall(item)
+                        if len(td_list) == 0:
+                            continue
+                        flag = False
+                    for td in td_list:
+                        a_list = comment_a.findall(td)
+                        if len(a_list):
+                            a_result = '['
+                            a_len = len(a_list)
+                            a_result += a_list[0]
+                            j = 1
+                            while a_len != j:
+                                a_result += ',' + a_list[j]
+                                j = j + 1
+                            a_result += '] '
+                            result.append(a_result)
+                        else:
+                            result.append(td.replace(' ', '').replace('<br />', '').replace('<br/>', '').replace('\n', ''))
+                    if flag:
+                        td_list = comment_td.findall(item)
+                        for td in td_list:
+                            result.append(td)
+                    csv_writer.writerow(result)
+                    print(result)
+                i = i + 1
+    else:
+        print("无法访问")
+
+
+def __send_request__(path: str):
+    response = requests.get(base_url[useGoogleCN] + path)
+    return response
+
+
+if __name__ == '__main__':
+    month_count = 12
+    year_start = 2017
+    year_end = 2020
+    while year_start <= year_end:
+        year = str(year_start)
+        year_start = year_start + 1
+        i = 1
+        while i <= month_count:
+            if i >= 10:
+                month = year + '-' + str(i) + '-01'
+            else:
+                month = year + '-0' + str(i) + '-01'
+            i = i + 1
+            print(month)
+            get_result(month)
+            sleep(1)
